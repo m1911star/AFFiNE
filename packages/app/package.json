@@ -31,6 +31,8 @@
     "lit": "^2.3.1",
     "next": "13.1.0",
     "next-debug-local": "^0.1.5",
+    "notion-types": "^6.15.6",
+    "notion-client": "^6.15.6",
     "prettier": "^2.7.1",
     "quill": "^1.3.7",
     "quill-cursors": "^4.0.0",

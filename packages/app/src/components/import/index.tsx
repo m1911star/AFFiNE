@@ -5,9 +5,12 @@ import { Wrapper, Content } from '@/ui/layout';
 import Loading from '@/components/loading';
 import { usePageHelper } from '@/hooks/use-page-helper';
 import { useAppState } from '@/providers/app-state-provider/context';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from '@affine/i18n';
-// import { Tooltip } from '@/ui/tooltip';
+import { StyledInputContent } from '../quick-search/style';
+import type { ExtendedRecordMap } from 'notion-types';
+import { parseNotionData } from '@/utils/notion';
+
 type ImportModalProps = {
   open: boolean;
   onClose: () => void;
@@ -21,11 +24,12 @@ export const ImportModal = ({ open, onClose }: ImportModalProps) => {
   const { openPage, createPage } = usePageHelper();
   const { currentWorkspace } = useAppState();
   const { t } = useTranslation();
+  const [notionPageId, setPageId] = useState('');
   const _applyTemplate = function (pageId: string, template: Template) {
     const page = currentWorkspace?.getPage(pageId);
-
     const title = template.name;
     if (page) {
+      page.captureSync();
       currentWorkspace?.setPageMeta(page.id, { title });
       if (page && page.root === null) {
         setTimeout(() => {
@@ -42,39 +46,48 @@ export const ImportModal = ({ open, onClose }: ImportModalProps) => {
       }
     }
   };
-  const _handleAppleTemplate = async function (template: Template) {
+  const _handleAppleTemplate = useCallback(
+    async function (template: Template) {
+      const pageId = await createPage();
+      if (pageId) {
+        openPage(pageId);
+        _applyTemplate(pageId, template);
+      }
+    },
+    [openPage, createPage, _applyTemplate]
+  );
+
+  const _handleApplyTemplateFromNotionPage = useCallback(async () => {
+    const records = (await fetch(`/api/notion?pageId=${notionPageId}`).then(
+      res => res.json()
+    )) as ExtendedRecordMap;
     const pageId = await createPage();
     if (pageId) {
       openPage(pageId);
-      _applyTemplate(pageId, template);
+      const page = currentWorkspace?.getPage(pageId);
+      if (page) {
+        page.captureSync();
+        page.addBlock({ flavour: 'affine:surface' }, null);
+        const frameId = page.addBlock({ flavour: 'affine:frame' }, pageId);
+        const { title } = await parseNotionData(
+          records,
+          notionPageId,
+          frameId,
+          page
+        );
+        const editor = document.querySelector('editor-container');
+        currentWorkspace?.setPageMeta(page.id, { title });
+
+        if (editor) {
+          page.resetHistory();
+          editor.requestUpdate();
+        }
+      }
     }
-  };
-  const _handleAppleTemplateFromFilePicker = async () => {
-    if (!window.showOpenFilePicker) {
-      return;
-    }
-    const arrFileHandle = await window.showOpenFilePicker({
-      types: [
-        {
-          accept: {
-            'text/markdown': ['.md'],
-            'text/html': ['.html', '.htm'],
-            'text/plain': ['.text'],
-          },
-        },
-      ],
-      multiple: false,
-    });
-    for (const fileHandle of arrFileHandle) {
-      const file = await fileHandle.getFile();
-      const text = await file.text();
-      _handleAppleTemplate({
-        name: file.name,
-        source: text,
-      });
-    }
+
     onClose && onClose();
-  };
+  }, [createPage, notionPageId, onClose, currentWorkspace]);
+
   useEffect(() => {
     if (status === 'importing') {
       setTimeout(() => {
@@ -90,22 +103,25 @@ export const ImportModal = ({ open, onClose }: ImportModalProps) => {
         <StyledTitle>{t('Import')}</StyledTitle>
 
         {status === 'unImported' && (
-          <StyledButtonWrapper>
-            <Button
-              onClick={() => {
-                _handleAppleTemplateFromFilePicker();
-              }}
-            >
-              Markdown
-            </Button>
-            {/* <Button
-              onClick={() => {
-                _handleAppleTemplateFromFilePicker();
-              }}
-            >
-              HTML
-            </Button> */}
-          </StyledButtonWrapper>
+          <>
+            <StyledInputContent>
+              <input
+                placeholder="Notion Page Id"
+                onChange={e => {
+                  setPageId(e.target.value);
+                }}
+              />
+            </StyledInputContent>
+            <StyledButtonWrapper>
+              <Button
+                onClick={() => {
+                  _handleApplyTemplateFromNotionPage();
+                }}
+              >
+                Notion Page
+              </Button>
+            </StyledButtonWrapper>
+          </>
         )}
 
         {status === 'importing' && (
