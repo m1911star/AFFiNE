@@ -9,7 +9,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from '@affine/i18n';
 import { StyledInputContent } from '../quick-search/style';
 import type { ExtendedRecordMap } from 'notion-types';
-import { parseNotionData } from '@/utils/notion';
+import { convertToRealPageId, parseNotionData } from '@/utils/notion';
 
 type ImportModalProps = {
   open: boolean;
@@ -67,8 +67,13 @@ export const ImportModal = ({ open, onClose }: ImportModalProps) => {
       const page = currentWorkspace?.getPage(pageId);
       if (page) {
         page.captureSync();
-        page.addBlock({ flavour: 'affine:surface' }, null);
-        const frameId = page.addBlock({ flavour: 'affine:frame' }, pageId);
+        const realNotionPageId = convertToRealPageId(notionPageId);
+        const pageBlockId = page.addBlockByFlavour('affine:page', {
+          title:
+            records.block[realNotionPageId].value.properties?.title[0][0] ?? '',
+        });
+        page.addBlockByFlavour('affine:surface', {}, null);
+        const frameId = page.addBlockByFlavour('affine:frame', {}, pageBlockId);
         const { title } = await parseNotionData(
           records,
           notionPageId,
@@ -76,7 +81,6 @@ export const ImportModal = ({ open, onClose }: ImportModalProps) => {
           page
         );
         const editor = document.querySelector('editor-container');
-        currentWorkspace?.setPageMeta(page.id, { title });
 
         if (editor) {
           page.resetHistory();
